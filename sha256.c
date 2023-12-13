@@ -20,8 +20,13 @@ extern "C" {
 #define G0(x)           (ROR(U32(x), 7) ^ ROR(U32(x), 18) ^ SHR(U32(x), 3))
 #define G1(x)           (ROR(U32(x), 17) ^ ROR(U32(x), 19) ^ SHR(U32(x), 10))
 
+enum CharacterVariable
+{
+    a = 0, b, c, d, e, f, g, h
+};
 
-static const uint32_t K[64] = {
+
+static const uint32_t g_auiK[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
     0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -40,7 +45,7 @@ static const uint32_t K[64] = {
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
-static const uint32_t H[8] = {
+static const uint32_t g_auiH[8] = {
     0x6a09e667,
     0xbb67ae85,
     0x3c6ef372,
@@ -51,7 +56,31 @@ static const uint32_t H[8] = {
     0x5be0cd19,
 };
 
-int32_t sha256(const void *pvdata, uint32_t uidateLen, uint8_t aucresult[32])
+static void Compression(uint32_t auiAToH[8], const uint32_t auiW[64])
+{
+    for (uint32_t i = 0; i < 8; i++)
+    {
+        auiAToH[i] = g_auiH[i];
+    }
+
+    for (uint32_t i = 0; i < 64; i++)
+    {
+        const uint32_t uiTemp1 = auiAToH[h] + S1(auiAToH[e]) + \
+                                    CH(auiAToH[e], auiAToH[f], auiAToH[g]) + g_auiK[i] + auiW[i];
+        const uint32_t uiTemp2 = S0(auiAToH[a]) + MAJ(auiAToH[a], auiAToH[b], auiAToH[c]);
+
+        auiAToH[h] = auiAToH[g];
+        auiAToH[g] = auiAToH[f];
+        auiAToH[f] = auiAToH[e];
+        auiAToH[e] = auiAToH[d] + uiTemp1;
+        auiAToH[d] = auiAToH[c];
+        auiAToH[c] = auiAToH[b];
+        auiAToH[b] = auiAToH[a];
+        auiAToH[a] = uiTemp1 + uiTemp2;
+    }
+}
+
+int32_t Sha256(const void *pvData, uint32_t uiDateLen, uint8_t aucResult[32])
 {
     return 0;
 }

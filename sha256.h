@@ -12,7 +12,7 @@
 extern "C" {
 #endif      // __cplusplus
 
-int32_t sha256(const void *pvdata, uint32_t uidateLen, uint8_t aucresult[32]);
+int32_t Sha256(const void *pvData, uint32_t uiDateLen, uint8_t aucResult[32]);
 
 #ifdef __cplusplus
 }
