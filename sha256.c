@@ -3,6 +3,7 @@
  */
 
 #include "sha256.h"
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,13 +57,116 @@ static const uint32_t g_auiH[8] = {
     0x5be0cd19,
 };
 
-static void Compression(uint32_t auiAToH[8], const uint32_t auiW[64])
+static void U64ToU8BufBe(const uint64_t uiU64, uint8_t aucBeBuf[8])
 {
-    for (uint32_t i = 0; i < 8; i++)
+    uint64_t uiU64Temp = uiU64;
+
+    for (uint8_t i = 0; i < 8; i++)
     {
-        auiAToH[i] = g_auiH[i];
+        aucBeBuf[7 - i] = (uint8_t)(uiU64Temp % 256U);
+
+        uiU64Temp /= 256U;
+    }
+}
+
+static void U32ToU8BufBe(const uint32_t uiU32, uint8_t aucBeBuf[4])
+{
+    uint32_t uiU32Temp = uiU32;
+
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        aucBeBuf[3 - i] = (uint8_t)(uiU32Temp % 256U);
+
+        uiU32Temp /= 256U;
+    }
+}
+
+static uint32_t U8BufToU32Be(const uint8_t aucBuf[4])
+{
+    uint32_t uiU32 = 0;
+
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        uiU32 *= 256;
+        uiU32 += aucBuf[i];
     }
 
+    return uiU32;
+}
+
+static void PreDealAddBit(uint8_t aucMsgBlock[64], const uint64_t uiTotalLen, uint8_t *pucIsRemainder)
+{
+    const uint32_t uiBlockLen = uiTotalLen % 64;
+
+    if (uiBlockLen < 64)
+    {
+        aucMsgBlock[uiBlockLen] = 0x80U;
+
+        if (uiBlockLen < 56)
+        {
+            for (uint8_t i = uiBlockLen + 1; i < 56; i++)
+            {
+                aucMsgBlock[i] = 0U;
+            }
+
+            U64ToU8BufBe(uiTotalLen, &aucMsgBlock[56]);
+
+            *pucIsRemainder = 0;
+        }
+        else
+        {
+            for (uint8_t i = uiBlockLen + 1; i < 64; i++)
+            {
+                aucMsgBlock[i] = 0U;
+            }
+
+            *pucIsRemainder = 1;
+        }
+    }
+    else
+    {
+        *pucIsRemainder = 2;
+    }
+}
+
+static void AddOneMsgBlock(uint8_t aucMsgBlock[64], const uint64_t uiTotalLen, uint8_t ucIsRemainder)
+{
+    if (1 == ucIsRemainder)
+    {
+        memset(&aucMsgBlock[0], 0U, 56);
+
+        U64ToU8BufBe(uiTotalLen, &aucMsgBlock[56]);
+    }
+    else if (2 == ucIsRemainder)
+    {
+        aucMsgBlock[0] = 0x80U;
+
+        memset(&aucMsgBlock[1], 0U, 56 - 1);
+
+        U64ToU8BufBe(uiTotalLen, &aucMsgBlock[56]);
+    }
+    else
+    {
+
+    }
+}
+
+static void CalaParamW(const uint32_t auiM[16], uint32_t auiW[64])
+{
+    uint32_t i = 0;
+    for (i = 0; i < 16; i++)
+    {
+        auiW[i] = auiM[i];
+    }
+
+    for (; i < 64; i++)
+    {
+        auiW[i] = G1(auiW[i - 2]) + auiW[i - 7] + G0(auiW[i - 15]) + auiW[i - 16];
+    }
+}
+
+static void Compression(uint32_t auiAToH[8], const uint32_t auiW[64])
+{
     for (uint32_t i = 0; i < 64; i++)
     {
         const uint32_t uiTemp1 = auiAToH[h] + S1(auiAToH[e]) + \
@@ -80,8 +184,62 @@ static void Compression(uint32_t auiAToH[8], const uint32_t auiW[64])
     }
 }
 
-int32_t Sha256(const void *pvData, uint32_t uiDateLen, uint8_t aucResult[32])
+static void GetM(const uint8_t aucData[64], uint32_t auiM[16])
 {
+    for (uint8_t i = 0; i < 16; i++)
+    {
+        auiM[i] = U8BufToU32Be(&aucData[i * 4]);
+    }
+}
+
+int32_t Sha256(const void *pvData, uint64_t uiDateLen, uint8_t aucResult[32])
+{
+    uint32_t auiH[8] = {0};
+    uint8_t *pucData = (uint8_t *)pvData;
+    uint32_t auiM[16] = {0};
+    uint32_t auiW[64] = {0};
+    uint8_t ucIsRemainder = 0U;
+    uint8_t aucRemainderMsgBuf[64] = {0};
+
+    memcpy(auiH, g_auiH, sizeof(g_auiH));
+
+    if (uiDateLen < 0x100000000)
+    {
+        const uint32_t uiBlockNum = uiDateLen / 64;
+        uint32_t i = 0;
+
+        for (i = 0; i < (uiBlockNum - 1U); i++)
+        {
+            GetM(&pucData[64 * i], auiM);
+
+            CalaParamW(auiM, auiW);
+
+            Compression(auiH, auiW);
+        }
+
+        memcpy(aucRemainderMsgBuf, &pucData[64 * i], uiDateLen % 64);
+        PreDealAddBit(aucRemainderMsgBuf, uiDateLen, &ucIsRemainder);
+        GetM(aucRemainderMsgBuf, auiM);
+        CalaParamW(auiM, auiW);
+        Compression(auiH, auiW);
+
+        if (0 != ucIsRemainder)
+        {
+            AddOneMsgBlock(aucRemainderMsgBuf, uiDateLen, ucIsRemainder);
+            GetM(aucRemainderMsgBuf, auiM);
+            CalaParamW(auiM, auiW);
+            Compression(auiH, auiW);
+        }
+    }
+    else
+    {
+        // 
+    }
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        U32ToU8BufBe(auiH[i], &aucResult[i * 4]);
+    }
+
     return 0;
 }
 
