@@ -7,8 +7,6 @@
 
 int main(int argc, char *argv[])
 {
-    printf("Hello world!\n");
-
     uint8_t aucHash[32] = {0};
 
     Sha256("abc", 3, aucHash);

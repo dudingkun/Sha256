@@ -85,10 +85,10 @@ static uint32_t U8BufToU32Be(const uint8_t aucBuf[4])
 {
     uint32_t uiU32 = 0;
 
-    for (uint8_t i = 0; i < 8; i++)
+    for (uint8_t i = 0; i < 4; i++)
     {
         uiU32 *= 256;
-        uiU32 += aucBuf[i];
+        uiU32 += (uint32_t)aucBuf[i];
     }
 
     return uiU32;
@@ -109,7 +109,7 @@ static void PreDealAddBit(uint8_t aucMsgBlock[64], const uint64_t uiTotalLen, ui
                 aucMsgBlock[i] = 0U;
             }
 
-            U64ToU8BufBe(uiTotalLen, &aucMsgBlock[56]);
+            U64ToU8BufBe(uiTotalLen * 8, &aucMsgBlock[56]);
 
             *pucIsRemainder = 0;
         }
@@ -167,20 +167,28 @@ static void CalaParamW(const uint32_t auiM[16], uint32_t auiW[64])
 
 static void Compression(uint32_t auiAToH[8], const uint32_t auiW[64])
 {
+    uint32_t auiA2HTemp[8] = {0};
+    memcpy(auiA2HTemp, auiAToH, sizeof(auiA2HTemp));
+
     for (uint32_t i = 0; i < 64; i++)
     {
-        const uint32_t uiTemp1 = auiAToH[h] + S1(auiAToH[e]) + \
-                                    CH(auiAToH[e], auiAToH[f], auiAToH[g]) + g_auiK[i] + auiW[i];
-        const uint32_t uiTemp2 = S0(auiAToH[a]) + MAJ(auiAToH[a], auiAToH[b], auiAToH[c]);
+        const uint32_t uiTemp1 = auiA2HTemp[h] + S1(auiA2HTemp[e]) + \
+                                    CH(auiA2HTemp[e], auiA2HTemp[f], auiA2HTemp[g]) + g_auiK[i] + auiW[i];
+        const uint32_t uiTemp2 = S0(auiA2HTemp[a]) + MAJ(auiA2HTemp[a], auiA2HTemp[b], auiA2HTemp[c]);
 
-        auiAToH[h] = auiAToH[g];
-        auiAToH[g] = auiAToH[f];
-        auiAToH[f] = auiAToH[e];
-        auiAToH[e] = auiAToH[d] + uiTemp1;
-        auiAToH[d] = auiAToH[c];
-        auiAToH[c] = auiAToH[b];
-        auiAToH[b] = auiAToH[a];
-        auiAToH[a] = uiTemp1 + uiTemp2;
+        auiA2HTemp[h] = auiA2HTemp[g];
+        auiA2HTemp[g] = auiA2HTemp[f];
+        auiA2HTemp[f] = auiA2HTemp[e];
+        auiA2HTemp[e] = auiA2HTemp[d] + uiTemp1;
+        auiA2HTemp[d] = auiA2HTemp[c];
+        auiA2HTemp[c] = auiA2HTemp[b];
+        auiA2HTemp[b] = auiA2HTemp[a];
+        auiA2HTemp[a] = uiTemp1 + uiTemp2;
+    }
+
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        auiAToH[i] += auiA2HTemp[i];
     }
 }
 
@@ -208,7 +216,7 @@ int32_t Sha256(const void *pvData, uint64_t uiDateLen, uint8_t aucResult[32])
         const uint32_t uiBlockNum = uiDateLen / 64;
         uint32_t i = 0;
 
-        for (i = 0; i < (uiBlockNum - 1U); i++)
+        for (i = 0; i < uiBlockNum; i++)
         {
             GetM(&pucData[64 * i], auiM);
 
@@ -217,11 +225,18 @@ int32_t Sha256(const void *pvData, uint64_t uiDateLen, uint8_t aucResult[32])
             Compression(auiH, auiW);
         }
 
-        memcpy(aucRemainderMsgBuf, &pucData[64 * i], uiDateLen % 64);
-        PreDealAddBit(aucRemainderMsgBuf, uiDateLen, &ucIsRemainder);
-        GetM(aucRemainderMsgBuf, auiM);
-        CalaParamW(auiM, auiW);
-        Compression(auiH, auiW);
+        if (0 != (uiDateLen % 64))
+        {
+            memcpy(aucRemainderMsgBuf, &pucData[64 * i], uiDateLen % 64);
+            PreDealAddBit(aucRemainderMsgBuf, uiDateLen, &ucIsRemainder);
+            GetM(aucRemainderMsgBuf, auiM);
+            CalaParamW(auiM, auiW);
+            Compression(auiH, auiW);
+        }
+        else
+        {
+            ucIsRemainder = 2;
+        }
 
         if (0 != ucIsRemainder)
         {
